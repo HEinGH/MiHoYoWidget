@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window（v1.2.1：恢复便签，战绩域仅手动刷新）",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "autostart:default",
+    "allow-get-app-state",
+    "allow-login-with-cookies",
+    "allow-get-login-status",
+    "allow-get-games",
+    "allow-get-sign-info",
+    "allow-manual-sign-in",
+    "allow-get-daily-note",
+    "allow-get-verification-challenge",
+    "allow-open-captcha-window",
+    "allow-reset-device-identity",
+    "allow-open-official-page",
+    "allow-get-config",
+    "allow-update-config",
+    "allow-start-qr-login",
+    "allow-logout",
+    "allow-set-auto-start",
+    "allow-get-auto-start"
+  ]
+}

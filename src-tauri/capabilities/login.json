@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "login-remote",
+  "description": "扫码登录窗口（远程域 user.mihoyo.com）允许通过 IPC 回传 cookie 状态",
+  "windows": ["login"],
+  "remote": {
+    "urls": ["https://user.mihoyo.com/*"]
+  },
+  "permissions": ["core:default"]
+}

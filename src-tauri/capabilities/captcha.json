@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "captcha",
+  "description": "验证码滑块窗口 + 官方页面窗口（均为 mihoyo 官方域宿主，需 event 回传滑块结果）",
+  "windows": ["captcha", "official"],
+  "permissions": [
+    "core:default",
+    "allow-verify-captcha-fallback"
+  ],
+  "remote": {
+    "urls": ["https://webstatic.mihoyo.com/*", "https://www.miyoushe.com/*"]
+  }
+}

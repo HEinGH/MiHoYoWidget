@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-manual-sign-in"
+description = "Enables the manual_sign_in command without any pre-configured scope."
+commands.allow = ["manual_sign_in"]
+
+[[permission]]
+identifier = "deny-manual-sign-in"
+description = "Denies the manual_sign_in command without any pre-configured scope."
+commands.deny = ["manual_sign_in"]

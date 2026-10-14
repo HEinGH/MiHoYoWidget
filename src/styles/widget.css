@@ -1,0 +1,771 @@
+:root {
+  /* 背景不透明度由 --bg-alpha 控制（App.tsx 随"不透明度"滑块联动）：
+     不透明度 100% → alpha=1 纯色背景（完全遮住桌面，无透明效果）；
+     低不透明度 → 降低 alpha 保留毛玻璃透出 */
+  --bg: rgba(24, 24, 38, var(--bg-alpha, 0.88));
+  --bg-card: rgba(255, 255, 255, 0.08);
+  --bg-tab: rgba(255, 255, 255, 0.06);
+  --text: #fff;
+  --text-dim: rgba(255, 255, 255, 0.62);
+  --text-faint: rgba(255, 255, 255, 0.38);
+  --accent: #4fc3f7;
+  --accent-hover: #29b6f6;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
+
+.widget-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* 圆角随不透明度联动（App.tsx 设 --shell-radius）：
+     完全实色（透明度 0%）时圆角归零 → 背景铺满视口，杜绝圆角四角透出桌面；
+     半透明毛玻璃时保留圆角 */
+  border-radius: var(--shell-radius, 12px);
+  /* 毛玻璃模糊随不透明度联动（App.tsx 设 --bg-blur）：
+     ⚠️ 完全不透明（opacity=1）时必须为 `none` 彻底移除属性——
+        blur(0px) 仍会激活 Chromium 透明窗口的 backdrop-filter 渲染路径，
+        导致【整个页面】半透明（2026-08-30 实测"主页面整体透出桌面"根因） */
+  backdrop-filter: var(--bg-blur, blur(18px));
+  -webkit-backdrop-filter: var(--bg-blur, blur(18px));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+/* 顶部 tab 栏（可拖拽区域） */
+.widget-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 8px 6px;
+  background: var(--bg-tab);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+[data-tauri-drag-region] {
+  cursor: grab;
+}
+[data-tauri-drag-region]:active {
+  cursor: grabbing;
+}
+
+.game-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+}
+
+.game-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.0833rem;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+}
+
+.game-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.game-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.header-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 1.1667rem;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+/* 主体内容 */
+.widget-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.game-meta {
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.game-meta .title {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.game-meta .sub {
+  font-size: 0.9167rem;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.card-title {
+  font-size: 1rem;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 签到卡 */
+.sign-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 1.1667rem;
+  margin-bottom: 8px;
+}
+
+.sign-status .icon {
+  font-size: 1.5rem;
+}
+
+.month-progress {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.month-progress .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #82cfff);
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
+.month-progress-label {
+  font-size: 0.9167rem;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.sign-btn {
+  display: block;
+  margin: 10px auto 0;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-size: 1.0833rem;
+  font-weight: 600;
+  padding: 6px 24px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.sign-btn:hover {
+  background: var(--accent-hover);
+}
+
+.sign-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 便签卡（战绩域 · 🔴 仅手动刷新） */
+.notes-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.note-row {
+  display: grid;
+  grid-template-columns: 6.3333rem 1fr 5.3333rem;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.9167rem;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.note-row:last-child {
+  border-bottom: none;
+}
+
+.note-label {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-value {
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-span {
+  grid-column: 2 / 4;
+  text-align: left;
+}
+
+.note-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.note-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: #1976d2;
+  transition: width 0.2s;
+}
+
+.note-bar.vitality .note-bar-fill {
+  background: #7cb342;
+}
+
+.note-row.full .note-value {
+  color: #66bb6a;
+  font-weight: 600;
+}
+
+/* 顶部"更新时间 + 刷新按钮"（刷新按钮是战绩域唯一合法入口） */
+.note-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-updated {
+  font-size: 0.8333rem;
+  color: var(--text-faint);
+}
+
+.note-refresh-btn {
+  background: rgba(79, 195, 247, 0.16);
+  border: 1px solid rgba(79, 195, 247, 0.35);
+  color: var(--accent);
+  font-size: 0.8333rem;
+  font-family: inherit;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.note-refresh-btn:hover:not(:disabled) {
+  background: rgba(79, 195, 247, 0.28);
+}
+
+.note-refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 「去验证」：仅便签返回 1034（验证码保护）时出现；点击才发起战绩域挑战请求 */
+.note-verify-btn {
+  display: block;
+  margin-top: 8px;
+  width: 100%;
+  background: rgba(255, 167, 38, 0.18);
+  border: 1px solid rgba(255, 167, 38, 0.4);
+  color: #ffb74d;
+  font-size: 0.9167rem;
+  font-family: inherit;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.note-verify-btn:hover:not(:disabled) {
+  background: rgba(255, 167, 38, 0.3);
+}
+
+.note-verify-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 「打开官方页面验证」：让站点自己的 JS 走验证流程（自算 DS、自带风控上下文） */
+.note-official-btn {
+  display: block;
+  margin-top: 6px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text-dim);
+  font-size: 0.8333rem;
+  font-family: inherit;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.note-official-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* 设置页：危险操作按钮（重置设备标识） */
+.btn-danger-outline {
+  background: transparent;
+  border: 1px solid rgba(239, 83, 80, 0.5);
+  color: #ef9a9a;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-danger-outline:hover {
+  background: rgba(239, 83, 80, 0.15);
+}
+
+.note-captcha-hint {
+  font-size: 0.8333rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.note-error {
+  font-size: 0.9167rem;
+}
+
+.note-error-text {
+  color: #ef9a9a;
+  line-height: 1.5;
+}
+
+.note-error-hint {
+  margin-top: 4px;
+  font-size: 0.8333rem;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.note-placeholder {
+  font-size: 0.9167rem;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 10px 0;
+  line-height: 1.6;
+}
+
+.note-placeholder-sub {
+  display: block;
+  font-size: 0.8333rem;
+  opacity: 0.8;
+}
+
+.expand-btn {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-faint);
+  font-size: 0.8333rem;
+  font-family: inherit;
+  padding: 5px 0 0;
+  cursor: pointer;
+}
+
+.expand-btn:hover {
+  color: var(--text-dim);
+}
+
+/* 窄窗口降级：压缩标签与数值列宽 */
+@media (max-width: 280px) {
+  .note-row {
+    grid-template-columns: 5rem 1fr 4.3333rem;
+  }
+}
+
+/* 状态与错误 */
+.widget-footer {
+  padding: 6px 14px 8px;
+  font-size: 0.9167rem;
+  color: var(--text-faint);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.error-banner {
+  background: rgba(244, 67, 54, 0.15);
+  color: #ef9a9a;
+  font-size: 0.9167rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+/* 弹窗（登录/设置） */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  /* 与主窗口圆角一致：直角遮罩会覆盖 widget-shell 的圆角，
+     导致打开设置/登录弹窗时窗口视觉上变成直角（2026-08-30 修复） */
+  border-radius: var(--shell-radius, 12px);
+  overflow: hidden;
+}
+
+.modal-panel {
+  width: 320px;
+  max-width: 92vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #1e1e2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius);
+  padding: 18px;
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.modal-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+}
+
+.modal-panel h3 {
+  font-size: 1.25rem;
+  margin-bottom: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.btn {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 1.0833rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+.btn-danger {
+  background: #d32f2f;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #b71c1c;
+}
+
+/* 退出登录二次确认弹层（绝对定位于设置面板内，覆盖其上） */
+.confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  border-radius: var(--radius);
+}
+
+.confirm-panel {
+  width: 82%;
+  max-width: 240px;
+  background: #1e1e2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-title {
+  font-size: 1.0833rem;
+  font-weight: 600;
+}
+
+.confirm-text {
+  font-size: 0.9167rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 设置项 */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 1.0833rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.switch.on {
+  background: var(--accent);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+}
+
+.switch.on::after {
+  left: 18px;
+}
+
+/* 字体大小档位按钮组 */
+.font-levels {
+  display: flex;
+  gap: 4px;
+}
+
+.font-level {
+  border: none;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.9167rem;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.font-level:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+}
+
+.font-level.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.font-level:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* 登录页 */
+.login-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.login-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.0833rem;
+  padding: 5px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.login-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* 仅一种登录方式时的静态提示条（不渲染 tab 栏，避免自动化任务误判 tab 为可点击入口）：
+   非按钮、无 pointer 样式，明确"不可交互"的语义 */
+.login-single-method {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 0.9167rem;
+  cursor: default;
+  user-select: none;
+}
+
+.login-single-method .method-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.qr-box {
+  height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.qr-box iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+textarea.cookie-input {
+  width: 100%;
+  height: 120px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 8px;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+}
+
+.cookie-input:focus {
+  border-color: var(--accent);
+}
+
+.hint {
+  font-size: 0.9167rem;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reset-device-identity"
+description = "Enables the reset_device_identity command without any pre-configured scope."
+commands.allow = ["reset_device_identity"]
+
+[[permission]]
+identifier = "deny-reset-device-identity"
+description = "Denies the reset_device_identity command without any pre-configured scope."
+commands.deny = ["reset_device_identity"]
