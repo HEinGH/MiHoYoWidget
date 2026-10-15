@@ -758,6 +758,33 @@ textarea.cookie-input {
   margin-top: 6px;
 }
 
+/* —— App 会话登录（2026-10-15 Stage 1）—— */
+.app-login-box {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* ⚠️ 二维码必须放在**浅色实底**上：深色主题下白底缺失会导致手机扫不出来 */
+.qr-box {
+  background: #ffffff;
+  padding: 8px;
+  border-radius: 10px;
+  line-height: 0;
+  display: inline-flex;
+}
+
+.hint code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0 4px;
+  border-radius: 4px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.9em;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 4px;

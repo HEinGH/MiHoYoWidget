@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window（v1.2.1：恢复便签，战绩域仅手动刷新）",
+  "description": "Capability for the main window（v1.2.1：恢复便签，战绩域仅手动刷新；2026-10-15：新增 App 会话登录）",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -20,6 +20,8 @@
     "allow-get-config",
     "allow-update-config",
     "allow-start-qr-login",
+    "allow-start-app-login",
+    "allow-cancel-app-login",
     "allow-logout",
     "allow-set-auto-start",
     "allow-get-auto-start"

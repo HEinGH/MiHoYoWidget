@@ -3,7 +3,12 @@
 //! ⚠️ 2026-10-14：`notes`（每日便签，战绩域）与 `captcha`（geetest 验证码）
 //!    已随风控消退恢复。二者的请求全部经 `gateway`（`Domain::Record`）节流，
 //!    且**只允许由前端「刷新 / 去验证」按钮显式触发**——禁止任何自动路径调用。
+//!
+//! ⚠️ 2026-10-15（Stage 1）：新增 `app_login` —— 官方「米游社扫码登录」App 身份会话。
+//!    只打 `passport-api.miyoushe.com` / `public-data-api.mihoyo.com`（**非战绩域**），
+//!    不触碰"仅手动刷新"铁律。详见模块头注释。
 
+pub mod app_login;
 pub mod captcha;
 pub mod notes;
 pub mod sign;

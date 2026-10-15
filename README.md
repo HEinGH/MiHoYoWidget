@@ -42,6 +42,14 @@ npm run tauri build               # 打包（NSIS 安装器需能访问 GitHub�
 >
 > 校验产物是否正常：`grep -a -o -c "index-<hash>.js" <exe>` 应 ≥1。
 
+> **发布构建建议加路径重映射** —— 否则 exe 会带上你本机的用户名与 cargo 缓存目录
+> （Rust 会把依赖源码的绝对路径写进二进制用于 panic 定位）：
+>
+> ```powershell
+> $env:RUSTFLAGS="--remap-path-prefix=$env:USERPROFILE\.cargo=/cargo"
+> npm run tauri build
+> ```
+
 ## 数据与隐私
 
 程序运行时数据**不在仓库内**，位于用户目录：

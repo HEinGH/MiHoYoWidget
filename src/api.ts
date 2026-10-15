@@ -288,6 +288,19 @@ export const api = {
       deviceFp: deviceFp ?? "",
     }),
   startQrLogin: () => invoke<void>("start_qr_login"),
+  /**
+   * App 身份会话登录（官方「米游社扫码登录」flow）。
+   *
+   * 与 `startQrLogin` 的区别（实测依据见报告 `15_路线A实战记录_1015.md`）：
+   * - 它会**在通行证侧登记设备**并下发 `cookie_token_v2`（`startQrLogin` 两者都没有）；
+   * - ⚠️ 返回的 `url` 是**二维码内容**，必须**由前端自己渲染成二维码** ——
+   *   该 URL 对应的官方页面只回一张静态提示图，**不渲染二维码**（实测踩坑）。
+   *
+   * 完成后由 `app-login-success` / `app-login-failed` 事件通知，**不会自动请求战绩域**。
+   */
+  startAppLogin: () => invoke<{ url: string; ticket: string }>("start_app_login"),
+  /** 取消进行中的 App 会话登录（轮询循环每 2s 检查一次取消信号） */
+  cancelAppLogin: () => invoke<void>("cancel_app_login"),
   logout: () => invoke<void>("logout"),
   /** 开机自启：联动系统注册（autostart 插件）+ 同步 config */
   setAutoStart: (enabled: boolean) => invoke<boolean>("set_auto_start", { enabled }),

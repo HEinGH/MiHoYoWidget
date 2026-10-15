@@ -276,6 +276,8 @@ pub fn run() {
             commands::get_config,
             commands::update_config,
             commands::start_qr_login,
+            commands::start_app_login,
+            commands::cancel_app_login,
             commands::logout,
             commands::set_auto_start,
             commands::get_auto_start,

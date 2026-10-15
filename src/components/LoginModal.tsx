@@ -1,18 +1,23 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { QRCodeSVG } from "qrcode.react";
 import { api } from "../api";
 import { useStore } from "../store";
 
-/** 登录弹窗：扫码（WebView 登录窗） + 手动粘贴 Cookie（受设置开关控制） */
+type LoginTab = "qr" | "app" | "cookie";
+
+/** 登录弹窗：扫码（WebView 登录窗） + App 会话登录 + 手动粘贴 Cookie（受设置开关控制） */
 export function LoginModal() {
   const { state, setLoginModal, init, setError } = useStore();
   // 设置中"允许手动粘贴 Cookie"开关：关闭时不展示粘贴 Cookie 入口
   const allowManual = state?.allow_manual_cookie ?? false;
-  const [tab, setTab] = useState<"qr" | "cookie">("qr");
-  // 登录方式列表：仅一种方式时**不渲染 tab 栏**，改静态提示条——
-  //   避免自动化任务把唯一 tab 误判为可点击入口（如误以为点击会打开扫码窗口）
-  const tabs: { key: "qr" | "cookie"; label: string }[] = [
+  const [tab, setTab] = useState<LoginTab>("qr");
+  // ⚠️ 2026-10-15：新增第三种登录方式「App 会话登录」后，tab 恒有 ≥2 项
+  //    → tab 栏**始终渲染**（原先"仅一种方式时改静态提示条"的分支已不再需要；
+  //      该分支的历史目的：避免自动化把唯一 tab 误判为可点击入口）。
+  const tabs: { key: LoginTab; label: string }[] = [
     { key: "qr", label: "扫码登录" },
+    { key: "app", label: "App 会话登录" },
     ...(allowManual ? [{ key: "cookie" as const, label: "粘贴 Cookie" }] : []),
   ];
   const [cookieText, setCookieText] = useState("");
@@ -22,6 +27,10 @@ export function LoginModal() {
   const [busy, setBusy] = useState(false);
   const [qrMsg, setQrMsg] = useState("");
   const [noteCheck, setNoteCheck] = useState("");
+  // —— App 会话登录状态 ——
+  const [appQr, setAppQr] = useState("");
+  const [appMsg, setAppMsg] = useState("");
+  const [appPhase, setAppPhase] = useState<"idle" | "waiting" | "failed">("idle");
 
   // 监听扫码登录成功事件
   useEffect(() => {
@@ -35,6 +44,32 @@ export function LoginModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 监听 App 会话登录结果（⚠️ 事件名与扫码登录刻意区分，避免两条链路混淆）
+  useEffect(() => {
+    const ok = listen("app-login-success", () => {
+      setAppPhase("idle");
+      setLoginModal(false);
+      void init();
+    });
+    const fail = listen<{ message: string }>("app-login-failed", (e) => {
+      setAppPhase("failed");
+      setAppMsg(`登录失败：${e.payload?.message ?? "未知原因"}`);
+    });
+    return () => {
+      void ok.then((fn) => fn());
+      void fail.then((fn) => fn());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 弹窗关闭（组件卸载）时终止后台轮询，避免"关了弹窗还在轮询"的隐性请求
+  useEffect(
+    () => () => {
+      void api.cancelAppLogin().catch(() => undefined);
+    },
+    [],
+  );
+
   const openQr = async () => {
     setBusy(true);
     setQrMsg("正在打开扫码窗口...");
@@ -47,6 +82,33 @@ export function LoginModal() {
       setBusy(false);
     }
   };
+
+  const startAppLogin = async () => {
+    setBusy(true);
+    setAppQr("");
+    setAppPhase("waiting");
+    setAppMsg("正在创建扫码会话...");
+    try {
+      const res = await api.startAppLogin();
+      setAppQr(res.url);
+      setAppMsg("请用米游社 App →「扫一扫」扫描二维码，并在手机上确认登录");
+    } catch (e) {
+      setAppPhase("failed");
+      setAppMsg(`创建扫码会话失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelAppLogin = useCallback(async () => {
+    try {
+      await api.cancelAppLogin();
+    } finally {
+      setAppQr("");
+      setAppPhase("idle");
+      setAppMsg("");
+    }
+  }, []);
 
   const parseCookies = (text: string): Record<string, string> => {
     const map: Record<string, string> = {};
@@ -88,52 +150,74 @@ export function LoginModal() {
     <div className="modal-mask">
       <div className="modal-panel">
         <h3>登录米游社</h3>
-        {allowManual ? (
-          // 设置中开启了"允许手动粘贴 Cookie" → 展示 tab 切换
-          <div className="login-tabs">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                className={`login-tab ${tab === t.key ? "active" : ""}`}
-                onClick={() => setTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          // 仅扫码一种登录方式：静态提示条（非按钮、非 tab 外观，自动化无法误判为可交互元素）
-          // ⚠️ 2026-09-26 清理：原实现为 `tabs.length > 1 ? tabs : 提示条`，而 tab 状态
-          //    只能通过 tab 栏自身切换 → allowManual=false 时 tab 恒为 "qr"，
-          //    下方 `tab === "cookie"` 分支为不可达死代码（cookie 分支永远进不去）。
-          //    改为直接以 allowManual 分支，语义等价且消除死分支。
-          <div className="login-single-method">
-            <span className="method-dot" />
-            当前仅支持扫码登录
+        <div className="login-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              className={`login-tab ${tab === t.key ? "active" : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "qr" && (
+          <div
+            style={{
+              height: 160,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+            }}
+          >
+            <button className="btn btn-primary" onClick={openQr} disabled={busy}>
+              {busy ? "打开中..." : "打开扫码窗口"}
+            </button>
+            <p className="hint" style={{ textAlign: "center" }}>
+              {qrMsg || "使用米游社 App 扫描二维码登录\n登录成功后自动提取 Cookie"}
+            </p>
           </div>
         )}
 
-        {tab === "qr" ? (
+        {tab === "app" && (
           <>
-            <div
-              style={{
-                height: 160,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-              }}
-            >
-              <button className="btn btn-primary" onClick={openQr} disabled={busy}>
-                {busy ? "打开中..." : "打开扫码窗口"}
-              </button>
+            <div className="app-login-box">
+              {appQr ? (
+                // ⚠️ 二维码必须由前端渲染：该 URL 对应的官方页面只回静态提示图（实测）
+                <div className="qr-box">
+                  <QRCodeSVG value={appQr} size={156} level="M" />
+                </div>
+              ) : (
+                <button className="btn btn-primary" onClick={startAppLogin} disabled={busy}>
+                  {busy ? "创建中..." : "生成登录二维码"}
+                </button>
+              )}
               <p className="hint" style={{ textAlign: "center" }}>
-                {qrMsg || "使用米游社 App 扫描二维码登录\n登录成功后自动提取 Cookie"}
+                {appMsg || "点击生成二维码，然后用米游社 App 扫一扫"}
               </p>
             </div>
+            {/* ⚠️ 透明提示：本登录方式会在通行证侧**登记设备**（官方会发"新设备登录"邮件），
+                设备名显示为 MiHoYoWidget。为可追溯性刻意保留此说明，不隐藏副作用。 */}
+            <p className="hint">
+              此方式走官方「米游社扫码登录」协议，会在你账号的「登录设备管理」中
+              <b>新增一台设备</b>（名称 <code>MiHoYoWidget</code>），并可能收到官方的新设备登录提醒邮件。
+              它是读取原神便签所需的 App 身份会话的前提。
+            </p>
+            {appPhase === "waiting" && appQr && (
+              <p className="hint">
+                二维码有效期约 6 分钟。
+                <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={cancelAppLogin}>
+                  取消
+                </button>
+              </p>
+            )}
           </>
-        ) : (
+        )}
+
+        {tab === "cookie" && (
           <>
             <textarea
               className="cookie-input"

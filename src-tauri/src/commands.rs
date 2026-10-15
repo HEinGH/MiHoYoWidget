@@ -30,6 +30,14 @@ pub struct ApiState {
     /// ⚠️ 状态机纪律：任何"冻结/pending 标记"**必须有出口 + TTL 兜底**。
     ///    本标记由 `captcha-success` 事件或看门狗超时解除；无出口的标记会永久卡死流程。
     pub captcha_pending: Mutex<HashSet<String>>,
+    /// 「App 会话登录」进行中标记（Stage 1，2026-10-15）。
+    ///
+    /// ⚠️ 纪律同上：**必须有出口 + TTL 兜底**。本标记由三处之一释放：
+    /// ① 轮询走到 `Confirmed` 并完成落盘；② 用户点「取消」；③ 超时
+    /// （`app_login::POLL_TIMEOUT_SECS`，与服务端二维码有效期同量级）。
+    pub app_login_busy: Mutex<bool>,
+    /// 「App 会话登录」取消信号（轮询循环每 2s 检查一次）
+    pub app_login_abort: Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
 }
 
 impl ApiState {
@@ -39,6 +47,8 @@ impl ApiState {
             accounts: Mutex::new(None),
             trace_map: Mutex::new(std::collections::HashMap::new()),
             captcha_pending: Mutex::new(HashSet::new()),
+            app_login_busy: Mutex::new(false),
+            app_login_abort: Mutex::new(None),
         }
     }
 }
@@ -275,6 +285,220 @@ pub async fn login_with_cookies(
     };
     crate::debug_log::log(&format!("login_with_cookies: 导入后自检 → {note_check}"));
     Ok(serde_json::json!({ "ok": true, "note_check": note_check }))
+}
+
+// ---------------------------------------------------------------------------
+// App 身份会话登录（官方「米游社扫码登录」flow，2026-10-15 Stage 1）
+//
+// 背景与方法依据见 `api/app_login.rs` 模块头 + 报告 `15_路线A实战记录_1015.md`。
+// ⚠️ 风控面：只打 passport-api.miyoushe.com / public-data-api.mihoyo.com，
+//    **不属于战绩域**，不触碰"仅手动刷新"铁律。
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct AppLoginStart {
+    /// 二维码内容 —— 由**前端**渲染成二维码图片
+    /// （⚠️ 实测：该 URL 对应的官方页面**不会**渲染二维码，只回一张静态提示图）
+    pub url: String,
+    /// 查询扫码状态用（前端不需要它，仅便于诊断）
+    pub ticket: String,
+}
+
+/// ① 开始 App 会话登录：生成新设备身份 → 创建扫码会话 → 后台轮询 → 返回二维码内容。
+///
+/// 为什么"新设备身份"：`x-rpc-device_id` 与 v2 会话绑定，必须与本会话成套；
+/// 且新设备会在通行证侧**登记**（用户会收到官方「新设备登录」邮件，设备名 = `DEVICE_NAME`）。
+#[tauri::command]
+pub async fn start_app_login(
+    app: AppHandle,
+    state: State<'_, ApiState>,
+) -> Result<AppLoginStart, String> {
+    // 若已有进行中的流程（例如用户关了弹窗没点取消），**先发取消信号再重开**，
+    // 避免"卡住 5 分钟不能重试"的死角（宽进：不报错，只记日志）。
+    {
+        let prev = state.app_login_abort.lock().unwrap().clone();
+        if let Some(a) = prev {
+            a.store(true, std::sync::atomic::Ordering::Relaxed);
+            crate::debug_log::log("start_app_login: 检测到上一次流程仍在进行，已发取消信号后重开");
+        }
+    }
+    match start_app_login_inner(&app, &state).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            *state.app_login_busy.lock().unwrap() = false;
+            *state.app_login_abort.lock().unwrap() = None;
+            Err(e)
+        }
+    }
+}
+
+async fn start_app_login_inner(
+    app: &AppHandle,
+    state: &State<'_, ApiState>,
+) -> Result<AppLoginStart, String> {
+    let device_id = uuid::Uuid::new_v4().to_string();
+    let client = crate::api::app_login::client();
+    let device_fp = crate::api::app_login::get_fp(&client, &device_id).await;
+    crate::debug_log::log(&format!(
+        "start_app_login: 新设备身份 device_id={device_id} device_name={}",
+        crate::api::app_login::DEVICE_NAME
+    ));
+
+    let qr = crate::api::app_login::create_qr(&client, &device_id, &device_fp)
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::debug_log::log(&format!(
+        "start_app_login: 扫码会话已创建 ticket={} url={}",
+        qr.ticket, qr.url
+    ));
+
+    let abort = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    *state.app_login_busy.lock().unwrap() = true;
+    *state.app_login_abort.lock().unwrap() = Some(abort.clone());
+
+    let app2 = app.clone();
+    // ⚠️ ticket 既要给后台轮询、又要返回前端 → 必须 clone（曾漏 clone 导致 E0382 move 错误）
+    let ticket_for_poll = qr.ticket.clone();
+    tauri::async_runtime::spawn(async move {
+        poll_app_login(app2, client, device_id, device_fp, ticket_for_poll, abort).await;
+    });
+
+    Ok(AppLoginStart { url: qr.url, ticket: qr.ticket })
+}
+
+/// ② 取消 App 会话登录（轮询循环每 2s 检查一次取消信号）
+#[tauri::command]
+pub fn cancel_app_login(state: State<'_, ApiState>) -> Result<(), String> {
+    if let Some(a) = state.app_login_abort.lock().unwrap().as_ref() {
+        a.store(true, std::sync::atomic::Ordering::Relaxed);
+        crate::debug_log::log("cancel_app_login: 已发出取消信号");
+    }
+    Ok(())
+}
+
+/// 轮询扫码状态直至 `Confirmed`；无论成败都会释放 `app_login_busy` 并向前端发事件。
+async fn poll_app_login(
+    app: AppHandle,
+    client: reqwest::Client,
+    device_id: String,
+    device_fp: String,
+    ticket: String,
+    abort: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::sync::atomic::Ordering;
+    let deadline = std::time::Instant::now()
+        + Duration::from_secs(crate::api::app_login::POLL_TIMEOUT_SECS);
+    let mut last_status = String::new();
+    let mut cookies: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut consecutive_err = 0u32;
+    let mut result: Result<(), String> = Err("等待超时：未在时限内完成扫码确认".into());
+
+    while std::time::Instant::now() < deadline {
+        if abort.load(Ordering::Relaxed) {
+            result = Err("已取消".into());
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        match crate::api::app_login::query_qr(&client, &device_id, &device_fp, &ticket).await {
+            Ok(p) => {
+                consecutive_err = 0;
+                if !p.cookies.is_empty() {
+                    cookies.extend(p.cookies);
+                }
+                if p.status != last_status {
+                    crate::debug_log::log(&format!(
+                        "app_login: 状态 {} → {}",
+                        if last_status.is_empty() { "(空)" } else { &last_status },
+                        p.status
+                    ));
+                    last_status = p.status.clone();
+                }
+                if p.status == "Confirmed" {
+                    // 再补一次请求：凭证可能分散在多次响应的 Set-Cookie（实测行为）
+                    if let Ok(p2) =
+                        crate::api::app_login::query_qr(&client, &device_id, &device_fp, &ticket).await
+                    {
+                        if !p2.cookies.is_empty() {
+                            cookies.extend(p2.cookies);
+                        }
+                    }
+                    result = finish_app_login(&app, &device_id, &device_fp, &cookies).await;
+                    break;
+                }
+            }
+            Err(e) => {
+                consecutive_err += 1;
+                crate::debug_log::log(&format!("app_login: 轮询失败({consecutive_err}) {e}"));
+                // 连续失败视为流程已死（如二维码失效 -3501 / 取消 -3505），避免空转 5 分钟
+                if consecutive_err >= 3 {
+                    result = Err(e.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    // ⚠️ 出口 + TTL 兜底：无论何种路径都释放标记（纪律：pending 标记不得永久残留）
+    if let Some(st) = app.try_state::<ApiState>() {
+        *st.app_login_busy.lock().unwrap() = false;
+        *st.app_login_abort.lock().unwrap() = None;
+    }
+
+    match result {
+        Ok(()) => {
+            crate::debug_log::log("app_login: 成功，已通知前端");
+            let _ = app.emit("app-login-success", serde_json::json!({}));
+        }
+        Err(msg) => {
+            crate::debug_log::log(&format!("app_login: 失败 → {msg}"));
+            let _ = app.emit("app-login-failed", serde_json::json!({ "message": msg }));
+        }
+    }
+}
+
+/// 确认成功后收尾：换设备标识 → **先验证再落盘** → 刷新客户端缓存。
+///
+/// ⚠️ 与 `login_with_cookies` 同一纪律：验证失败**回滚 device_id**，不破坏当前登录。
+///    （v2 会话与设备绑定，只换 cookie 不换设备会被判 `-100`；反之亦然。）
+async fn finish_app_login(
+    app: &AppHandle,
+    device_id: &str,
+    device_fp: &str,
+    raw: &std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    let mut c = cookies::Cookies::from_map(raw);
+    if c.is_empty() {
+        return Err("确认成功但响应未带任何凭证 cookie（Set-Cookie 解析为空）".into());
+    }
+    // 设备指纹以**本次登录所用**的 fp 为准（它的注册锚就是本 device_id）
+    if !device_fp.is_empty() {
+        c.device_fp = device_fp.to_string();
+    }
+    let old_dev = config::device_id(app);
+    config::set_device_id(app, device_id);
+    let api = MihoyoApi::new(app, &c);
+    match api.test_cookies().await {
+        Ok(true) => {}
+        other => {
+            config::set_device_id(app, &old_dev);
+            let reason = match other {
+                Ok(_) => "服务端判定会话无效".to_string(),
+                Err(e) => e.to_string(),
+            };
+            return Err(format!("App 会话验证失败（已回滚设备标识，当前登录未受影响）：{reason}"));
+        }
+    }
+    cookies::save(app, &c).map_err(|e| e.to_string())?;
+    let mut keys: Vec<String> = c.to_map().keys().cloned().collect();
+    keys.sort();
+    crate::debug_log::log(&format!(
+        "app_login: App 会话已落盘（device_id={device_id} · cookie 字段={keys:?}）"
+    ));
+    if let Some(st) = app.try_state::<ApiState>() {
+        *st.client.lock().unwrap() = Some(api);
+        *st.accounts.lock().unwrap() = None;
+    }
+    Ok(())
 }
 
 #[tauri::command]

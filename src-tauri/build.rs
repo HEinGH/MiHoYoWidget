@@ -28,6 +28,8 @@ fn main() {
                 "get_config",
                 "update_config",
                 "start_qr_login",
+                "start_app_login",
+                "cancel_app_login",
                 "logout",
                 "set_auto_start",
                 "get_auto_start",
